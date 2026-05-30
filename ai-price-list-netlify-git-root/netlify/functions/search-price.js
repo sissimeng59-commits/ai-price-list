@@ -38,14 +38,19 @@ exports.handler = async function (event) {
         }));
       }
     } catch (error) {
-      console.warn("AI price search failed. Falling back to mock data:", error.message);
+      const errorDebug = buildErrorDebug(error);
+      console.error("AI price search failed. Falling back to mock data:", errorDebug);
       return jsonResponse(200, withDebug(mockSearchForApi(query, body), {
         source: "mock_fallback",
         isFallback: true,
         apiMode: "responses",
         searchEnabled: false,
         extractorEnabled: false,
-        errorMessage: error.message
+        errorMessage: errorDebug.errorMessage,
+        status: errorDebug.status,
+        errorCode: errorDebug.errorCode,
+        providerErrorCode: errorDebug.providerErrorCode,
+        providerErrorMessage: errorDebug.providerErrorMessage
       }));
     }
 
@@ -55,7 +60,8 @@ exports.handler = async function (event) {
       apiMode: "responses",
       searchEnabled: false,
       extractorEnabled: false,
-      errorMessage: "AI provider env vars are missing or incomplete."
+      errorMessage: "AI provider env vars are missing or incomplete.",
+      status: null
     }));
   } catch (error) {
     console.warn("Search function failed. Falling back when possible:", error.message);
@@ -66,6 +72,22 @@ exports.handler = async function (event) {
 function withDebug(payload, debugOptions) {
   const debug = getDebugInfo(debugOptions);
   return Object.assign(payload, debug, { debug });
+}
+
+function buildErrorDebug(error) {
+  return {
+    status: error.status || null,
+    errorCode: error.errorCode || "",
+    providerErrorCode: error.providerErrorCode || "",
+    providerErrorMessage: sanitizeErrorMessage(error.providerErrorMessage || ""),
+    errorMessage: sanitizeErrorMessage(error.message || String(error))
+  };
+}
+
+function sanitizeErrorMessage(message) {
+  return String(message || "")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer ***");
 }
 
 function buildResponsesInput({ query, originalInput, selectedOption }) {

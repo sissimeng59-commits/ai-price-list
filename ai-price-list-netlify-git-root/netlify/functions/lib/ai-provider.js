@@ -18,6 +18,10 @@ function getDebugInfo({
   source = "mock_fallback",
   isFallback = true,
   errorMessage = "",
+  status = null,
+  errorCode = "",
+  providerErrorCode = "",
+  providerErrorMessage = "",
   apiMode = "chat_completions",
   searchEnabled = false,
   extractorEnabled = false
@@ -31,7 +35,11 @@ function getDebugInfo({
     extractorEnabled,
     source,
     isFallback,
-    errorMessage
+    errorMessage,
+    status,
+    errorCode,
+    providerErrorCode,
+    providerErrorMessage
   };
 }
 
@@ -112,7 +120,12 @@ async function requestResponsesJson({ input, tools = [], temperature = 0.2 }) {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`AI provider responses request failed: ${response.status} ${text.slice(0, 500)}`);
+      throw buildProviderError({
+        prefix: "AI provider responses request failed",
+        status: response.status,
+        statusText: response.statusText,
+        bodyText: text
+      });
     }
 
     const payload = await response.json();
@@ -120,6 +133,39 @@ async function requestResponsesJson({ input, tools = [], temperature = 0.2 }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function buildProviderError({ prefix, status, statusText, bodyText }) {
+  const parsed = parseProviderErrorBody(bodyText);
+  const providerMessage = parsed.message || parsed.errorMessage || parsed.msg || statusText || "";
+  const providerCode = parsed.code || parsed.errorCode || parsed.error_code || "";
+  const details = sanitizeErrorMessage(bodyText || providerMessage || statusText || "");
+  const error = new Error(`${prefix}: ${status} ${details}`);
+  error.status = status;
+  error.errorCode = providerCode || String(status);
+  error.providerErrorCode = providerCode;
+  error.providerErrorMessage = sanitizeErrorMessage(providerMessage);
+  error.responseBody = details;
+  return error;
+}
+
+function parseProviderErrorBody(bodyText) {
+  if (!bodyText) return {};
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed.error && typeof parsed.error === "object") {
+      return Object.assign({}, parsed, parsed.error);
+    }
+    return parsed;
+  } catch (error) {
+    return {};
+  }
+}
+
+function sanitizeErrorMessage(message) {
+  return String(message || "")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer ***");
 }
 
 function buildChatCompletionsUrl(baseUrl) {

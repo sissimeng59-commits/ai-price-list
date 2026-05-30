@@ -1014,8 +1014,18 @@
     var source = debug.source || "local_mock";
     var model = debug.modelUsed || "未配置";
     var search = debug.searchEnabled ? "是" : "否";
+    var extractor = debug.extractorEnabled ? "是" : "否";
     var fallback = debug.isFallback ? "是" : "否";
-    return "数据来源：" + source + "\n调用模型：" + model + "\n是否联网搜索：" + search + "\n是否 fallback：" + fallback;
+    return [
+      "数据来源：" + source,
+      "调用模型：" + model,
+      "apiMode：" + (debug.apiMode || "未知"),
+      "searchEnabled：" + search,
+      "extractorEnabled：" + extractor,
+      "isFallback：" + fallback,
+      "status：" + (debug.status || ""),
+      "errorMessage：" + (debug.errorMessage || "")
+    ].join("\n");
   }
 
   function extractDebugInfo(value) {
@@ -1025,9 +1035,14 @@
         modelUsed: "",
         apiMode: "",
         searchEnabled: false,
+        extractorEnabled: false,
         source: "",
         isFallback: false,
-        errorMessage: ""
+        errorMessage: "",
+        status: null,
+        errorCode: "",
+        providerErrorCode: "",
+        providerErrorMessage: ""
       };
     }
     var source = value && value.debug ? value.debug : value || {};
@@ -1036,9 +1051,14 @@
       modelUsed: source.modelUsed || "not_configured",
       apiMode: source.apiMode || "",
       searchEnabled: Boolean(source.searchEnabled),
+      extractorEnabled: Boolean(source.extractorEnabled),
       source: source.source || "local_mock",
       isFallback: source.isFallback === undefined ? true : Boolean(source.isFallback),
-      errorMessage: source.errorMessage || ""
+      errorMessage: source.errorMessage || "",
+      status: source.status || null,
+      errorCode: source.errorCode || "",
+      providerErrorCode: source.providerErrorCode || "",
+      providerErrorMessage: source.providerErrorMessage || ""
     };
   }
 
