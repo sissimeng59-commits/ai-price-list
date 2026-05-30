@@ -163,8 +163,23 @@
         keyword: keyword,
         originalInput: task.originalInput,
         selectedOption: task.selectedOption
-      }, function () {
-        return localSearchPrice(keyword, task.originalInput, task.selectedOption);
+      }, function (error) {
+        return localSearchPrice(keyword, task.originalInput, task.selectedOption).then(function (fallbackResult) {
+          fallbackResult.debug = {
+            provider: "",
+            modelUsed: "not_configured",
+            apiMode: "",
+            stage: "frontend_fetch",
+            searchEnabled: false,
+            extractorEnabled: false,
+            source: "local_mock",
+            isFallback: true,
+            errorName: error && error.name ? error.name : "",
+            errorMessage: error && error.message ? error.message : "",
+            timeoutMs: 90000
+          };
+          return fallbackResult;
+        });
       });
       logResponseSource("search-price", priceResponse);
       var result = normalizePriceResponse(priceResponse, keyword);
@@ -933,7 +948,7 @@
       if (!response.ok) throw new Error("请求失败");
       return response.json();
     } catch (error) {
-      return fallback();
+      return fallback(error);
     }
   }
 
@@ -1020,6 +1035,7 @@
       "数据来源：" + source,
       "调用模型：" + model,
       "apiMode：" + (debug.apiMode || "未知"),
+      "stage：" + (debug.stage || ""),
       "searchEnabled：" + search,
       "extractorEnabled：" + extractor,
       "isFallback：" + fallback,
@@ -1036,6 +1052,7 @@
         provider: "",
         modelUsed: "",
         apiMode: "",
+        stage: "",
         searchEnabled: false,
         extractorEnabled: false,
         source: "",
@@ -1054,6 +1071,7 @@
       provider: source.provider || "",
       modelUsed: source.modelUsed || "not_configured",
       apiMode: source.apiMode || "",
+      stage: source.stage || "",
       searchEnabled: Boolean(source.searchEnabled),
       extractorEnabled: Boolean(source.extractorEnabled),
       source: source.source || "local_mock",

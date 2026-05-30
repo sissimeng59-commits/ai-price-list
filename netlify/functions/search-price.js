@@ -37,7 +37,9 @@ exports.handler = async function (event) {
           apiMode: "responses",
           searchEnabled: true,
           extractorEnabled: false,
-          timeoutMs: RESPONSES_TIMEOUT_MS
+          timeoutMs: RESPONSES_TIMEOUT_MS,
+          stage: "success",
+          status: 200
         }));
       }
     } catch (error) {
@@ -53,6 +55,7 @@ exports.handler = async function (event) {
         errorMessage: errorDebug.errorMessage,
         status: errorDebug.status,
         errorName: errorDebug.errorName,
+        stage: errorDebug.stage,
         errorCode: errorDebug.errorCode,
         providerErrorCode: errorDebug.providerErrorCode,
         providerErrorMessage: errorDebug.providerErrorMessage
@@ -67,7 +70,8 @@ exports.handler = async function (event) {
       extractorEnabled: false,
       timeoutMs: RESPONSES_TIMEOUT_MS,
       errorMessage: "AI provider env vars are missing or incomplete.",
-      status: null
+      status: null,
+      stage: "backend_responses_request"
     }));
   } catch (error) {
     console.warn("Search function failed. Falling back when possible:", error.message);
@@ -84,6 +88,7 @@ function buildErrorDebug(error) {
   return {
     status: error.status || null,
     errorName: error.name || "",
+    stage: error.stage || "backend_responses_request",
     errorCode: error.errorCode || "",
     providerErrorCode: error.providerErrorCode || "",
     providerErrorMessage: sanitizeErrorMessage(error.providerErrorMessage || ""),
@@ -118,6 +123,7 @@ async function callSearchResponses({ input, tools, temperature }) {
   } catch (error) {
     const parseError = new Error("Parse error: Responses API returned non-JSON payload");
     parseError.name = "ParseError";
+    parseError.stage = "parse_response";
     throw parseError;
   }
 
@@ -152,6 +158,7 @@ function buildHttpError(response, text) {
   const details = parseProviderError(text);
   const error = new Error(sanitizeErrorMessage(details.message || text || response.statusText));
   error.name = "HttpError";
+  error.stage = "backend_responses_request";
   error.status = response.status;
   error.errorCode = details.code || String(response.status);
   error.providerErrorCode = details.code || "";
@@ -198,6 +205,7 @@ function parseAiJson(text) {
   if (!raw) {
     const error = new Error("Parse error: empty AI response text");
     error.name = "ParseError";
+    error.stage = "parse_response";
     throw error;
   }
 
@@ -208,6 +216,7 @@ function parseAiJson(text) {
     if (!match) {
       const parseError = new Error("Parse error: AI response was not JSON");
       parseError.name = "ParseError";
+      parseError.stage = "parse_response";
       throw parseError;
     }
     try {
@@ -215,6 +224,7 @@ function parseAiJson(text) {
     } catch (innerError) {
       const parseError = new Error("Parse error: failed to parse extracted JSON");
       parseError.name = "ParseError";
+      parseError.stage = "parse_response";
       throw parseError;
     }
   }
