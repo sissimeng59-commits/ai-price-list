@@ -72,10 +72,12 @@ Netlify 后台需要添加：
 
 当前 API 调用方式：
 
-- `apiMode`：`chat_completions`
+- `analyze-shopping`：普通 `chat_completions`，用于判断需求类型。
+- `search-price`：`responses`，用于联网搜索并整理价格结果。
+- `search-price` 会传入 `web_search` 和 `web_extractor` 工具。
 - `model`：来自 `AI_MODEL` 环境变量，没有写死默认模型。
-- `searchEnabled`：`false`
-- 当前没有使用 Responses API，也没有传入 `web_search` 或 `web_extractor` 工具。
+
+如果 `AI_MODEL=qwen3.6-flash` 在 Responses API + `web_search` 下不兼容，`search-price` 会 fallback 到 mock，并在 debug 里返回具体错误。可以在 Netlify 环境变量里把 `AI_MODEL` 改成支持 Responses API + 联网搜索工具的模型，例如 `qwen3.6-plus` 或百炼文档中标明支持该能力的模型。
 
 函数入口：
 

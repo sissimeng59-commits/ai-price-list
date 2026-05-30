@@ -14,13 +14,21 @@ function hasProviderConfig(config = getProviderConfig()) {
   return Boolean(config.apiKey && config.baseUrl && config.model);
 }
 
-function getDebugInfo({ source = "mock_fallback", isFallback = true, errorMessage = "" } = {}) {
+function getDebugInfo({
+  source = "mock_fallback",
+  isFallback = true,
+  errorMessage = "",
+  apiMode = "chat_completions",
+  searchEnabled = false,
+  extractorEnabled = false
+} = {}) {
   const config = getProviderConfig();
   return {
     provider: config.provider,
     modelUsed: config.model || "not_configured",
-    apiMode: "chat_completions",
-    searchEnabled: false,
+    apiMode,
+    searchEnabled,
+    extractorEnabled,
     source,
     isFallback,
     errorMessage
@@ -74,10 +82,80 @@ async function requestJson({ systemPrompt, userPrompt, temperature = 0.2 }) {
   }
 }
 
+async function requestResponsesJson({ input, tools = [], temperature = 0.2 }) {
+  const config = getProviderConfig();
+
+  if (!hasProviderConfig(config)) {
+    console.warn("AI provider env vars are missing. Falling back to mock data.");
+    return null;
+  }
+
+  const endpoint = buildResponsesUrl(config.baseUrl);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: config.model,
+        input,
+        tools,
+        temperature
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`AI provider responses request failed: ${response.status} ${text.slice(0, 500)}`);
+    }
+
+    const payload = await response.json();
+    return parseJsonContent(extractResponsesText(payload));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function buildChatCompletionsUrl(baseUrl) {
   const normalized = String(baseUrl || "").replace(/\/+$/, "");
   if (/\/chat\/completions$/.test(normalized)) return normalized;
   return `${normalized}/chat/completions`;
+}
+
+function buildResponsesUrl(baseUrl) {
+  const normalized = String(baseUrl || "").replace(/\/+$/, "");
+  if (/\/responses$/.test(normalized)) return normalized;
+  if (/\/chat\/completions$/.test(normalized)) {
+    return normalized.replace(/\/chat\/completions$/, "/responses");
+  }
+  return `${normalized}/responses`;
+}
+
+function extractResponsesText(payload) {
+  if (!payload) return "";
+  if (payload.output_text) return payload.output_text;
+  if (payload.text && typeof payload.text === "string") return payload.text;
+  if (payload.output && Array.isArray(payload.output)) {
+    return payload.output.map((item) => {
+      if (item.type === "message" && Array.isArray(item.content)) {
+        return item.content.map((content) => content.text || content.output_text || "").join("");
+      }
+      if (Array.isArray(item.content)) {
+        return item.content.map((content) => content.text || content.output_text || "").join("");
+      }
+      return item.text || item.output_text || "";
+    }).join("");
+  }
+  if (payload.choices && payload.choices[0] && payload.choices[0].message) {
+    return payload.choices[0].message.content || "";
+  }
+  return "";
 }
 
 function parseJsonContent(content) {
@@ -99,5 +177,6 @@ module.exports = {
   getProviderConfig,
   getDebugInfo,
   hasProviderConfig,
-  requestJson
+  requestJson,
+  requestResponsesJson
 };
