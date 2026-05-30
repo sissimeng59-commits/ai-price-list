@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 查价清单</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell" id="app">
+    <section class="home-view view-panel" id="homeView" aria-labelledby="homeTitle">
+      <header class="home-topbar">
+        <button class="icon-button" id="openMenuBtn" type="button" aria-label="打开菜单">☰</button>
+        <button class="text-button" id="openLibraryBtn" type="button">清单/历史</button>
+      </header>
+
+      <div class="home-center">
+        <h1 id="homeTitle">你好，今天想买什么？</h1>
+        <form class="composer home-composer" id="homeForm">
+          <textarea
+            id="homeInput"
+            rows="1"
+            placeholder="比如：我想囤卷纸 / 我想买得宝卷纸 / 我想买婴儿车"
+          ></textarea>
+          <button class="send-button" id="homeSendBtn" type="submit" aria-label="发送">↑</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="chat-view view-panel hidden" id="chatView" aria-labelledby="chatTitle">
+      <header class="chat-header">
+        <button class="icon-button" id="backHomeBtn" type="button" aria-label="返回首页">←</button>
+        <h1 id="chatTitle">购物对话</h1>
+        <button class="text-button" id="openLibraryFromChatBtn" type="button">清单/历史</button>
+      </header>
+
+      <div class="chat-scroll" id="chatScroll">
+        <div class="chat-stream" id="chatStream"></div>
+      </div>
+
+      <form class="composer chat-composer" id="chatForm">
+        <textarea
+          id="chatInput"
+          rows="1"
+          placeholder="问问关于商品、品牌或需求…"
+        ></textarea>
+        <button class="send-button" id="chatSendBtn" type="submit" aria-label="发送">↑</button>
+      </form>
+    </section>
+  </main>
+
+  <section class="overlay hidden" id="menuOverlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close-overlay></div>
+    <aside class="side-panel" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+      <header class="panel-header">
+        <h2 id="menuTitle">菜单</h2>
+        <button class="icon-button" id="closeMenuBtn" type="button" aria-label="关闭菜单">×</button>
+      </header>
+      <div class="panel-list">
+        <button class="panel-row" id="menuHistoryBtn" type="button">历史记录</button>
+        <button class="panel-row" id="menuChecklistBtn" type="button">我的清单</button>
+        <button class="panel-row" id="menuExportBtn" type="button">导出 JSON</button>
+      </div>
+    </aside>
+  </section>
+
+  <section class="overlay hidden" id="historyOverlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close-overlay></div>
+    <aside class="side-panel wide-panel" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+      <header class="panel-header">
+        <div>
+          <h2 id="historyTitle">历史记录</h2>
+          <p>点击一条记录，可以回到对话里继续看。</p>
+        </div>
+        <button class="icon-button" id="closeHistoryBtn" type="button" aria-label="关闭历史记录">×</button>
+      </header>
+      <div class="panel-toolbar">
+        <button class="secondary-button" id="historyExportBtn" type="button">导出 JSON</button>
+      </div>
+      <div class="panel-list" id="historyList"></div>
+    </aside>
+  </section>
+
+  <section class="overlay hidden" id="checklistOverlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close-overlay></div>
+    <aside class="side-panel wide-panel" role="dialog" aria-modal="true" aria-labelledby="checklistTitle">
+      <header class="panel-header">
+        <div>
+          <h2 id="checklistTitle">我的清单</h2>
+          <p>只显示你加入清单或标记已购买的项目。</p>
+        </div>
+        <button class="icon-button" id="closeChecklistBtn" type="button" aria-label="关闭我的清单">×</button>
+      </header>
+      <div class="panel-list" id="checklistList"></div>
+    </aside>
+  </section>
+
+  <section class="sheet-layer hidden" id="questionSheet" aria-hidden="true">
+    <div class="sheet-backdrop" id="closeQuestionBackdrop"></div>
+    <div class="bottom-sheet" role="dialog" aria-modal="true" aria-labelledby="questionSheetTitle">
+      <header class="sheet-header">
+        <div>
+          <h2 id="questionSheetTitle">先确认几个条件</h2>
+          <p>选完后，我再帮你生成更合适的推荐。</p>
+        </div>
+        <button class="icon-button" id="closeQuestionBtn" type="button" aria-label="关闭条件选择">×</button>
+      </header>
+      <div class="question-form" id="questionForm"></div>
+      <footer class="sheet-footer">
+        <button class="primary-button" id="generateQuestionBtn" type="button">生成推荐</button>
+      </footer>
+    </div>
+  </section>
+
+  <template id="priceTableTemplate">
+    <div class="price-table-wrap">
+      <table class="price-table">
+        <thead>
+          <tr>
+            <th>平台</th>
+            <th>推荐规格</th>
+            <th>预估到手价</th>
+            <th>折合单价</th>
+            <th>核心优惠组合</th>
+            <th>购买建议</th>
+            <th>打开看看</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
