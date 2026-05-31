@@ -1,5 +1,7 @@
 const { searchPrice } = require("./mock-data");
-const { getDebugInfo, requestResponsesJson } = require("./lib/ai-provider");
+const { getDebugInfo, getProviderConfig, hasProviderConfig } = require("./lib/ai-provider");
+
+const RESPONSES_TIMEOUT_MS = 60000;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
@@ -15,17 +17,17 @@ exports.handler = async function (event) {
     }
 
     try {
-      const aiResult = await requestResponsesJson({
+      const aiResult = await callSearchResponses({
         input: buildResponsesInput({
           query,
           originalInput: body.originalInput || "",
           selectedOption: body.selectedOption || null
         }),
         tools: [
-          { type: "web_search" },
-          { type: "web_extractor" }
+          { type: "web_search" }
         ],
-        temperature: 0.15
+        temperature: 0.15,
+        timeoutMs: RESPONSES_TIMEOUT_MS
       });
 
       if (aiResult) {
@@ -34,7 +36,10 @@ exports.handler = async function (event) {
           isFallback: false,
           apiMode: "responses",
           searchEnabled: true,
-          extractorEnabled: true
+          extractorEnabled: false,
+          timeoutMs: RESPONSES_TIMEOUT_MS,
+          stage: "success",
+          status: 200
         }));
       }
     } catch (error) {
@@ -44,10 +49,13 @@ exports.handler = async function (event) {
         source: "mock_fallback",
         isFallback: true,
         apiMode: "responses",
-        searchEnabled: false,
+        searchEnabled: true,
         extractorEnabled: false,
+        timeoutMs: RESPONSES_TIMEOUT_MS,
         errorMessage: errorDebug.errorMessage,
         status: errorDebug.status,
+        errorName: errorDebug.errorName,
+        stage: errorDebug.stage,
         errorCode: errorDebug.errorCode,
         providerErrorCode: errorDebug.providerErrorCode,
         providerErrorMessage: errorDebug.providerErrorMessage
@@ -60,8 +68,10 @@ exports.handler = async function (event) {
       apiMode: "responses",
       searchEnabled: false,
       extractorEnabled: false,
+      timeoutMs: RESPONSES_TIMEOUT_MS,
       errorMessage: "AI provider env vars are missing or incomplete.",
-      status: null
+      status: null,
+      stage: "backend_responses_request"
     }));
   } catch (error) {
     console.warn("Search function failed. Falling back when possible:", error.message);
@@ -77,11 +87,147 @@ function withDebug(payload, debugOptions) {
 function buildErrorDebug(error) {
   return {
     status: error.status || null,
+    errorName: error.name || "",
+    stage: error.stage || "backend_responses_request",
     errorCode: error.errorCode || "",
     providerErrorCode: error.providerErrorCode || "",
     providerErrorMessage: sanitizeErrorMessage(error.providerErrorMessage || ""),
     errorMessage: sanitizeErrorMessage(error.message || String(error))
   };
+}
+
+async function callSearchResponses({ input, tools, temperature }) {
+  const config = getProviderConfig();
+  if (!hasProviderConfig(config)) return null;
+
+  const response = await fetch(buildResponsesUrl(config.baseUrl), {
+    method: "POST",
+    headers: buildHeaders(config),
+    body: JSON.stringify({
+      model: config.model,
+      input,
+      tools,
+      temperature
+    }),
+    signal: timeoutSignal(RESPONSES_TIMEOUT_MS)
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw buildHttpError(response, text);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    const parseError = new Error("Parse error: Responses API returned non-JSON payload");
+    parseError.name = "ParseError";
+    parseError.stage = "parse_response";
+    throw parseError;
+  }
+
+  return parseAiJson(extractResponsesText(payload));
+}
+
+function buildHeaders(config) {
+  return {
+    "Authorization": `Bearer ${config.apiKey}`,
+    "Content-Type": "application/json"
+  };
+}
+
+function timeoutSignal(timeoutMs) {
+  const controller = new AbortController();
+  setTimeout(function () {
+    controller.abort();
+  }, timeoutMs);
+  return controller.signal;
+}
+
+function buildResponsesUrl(baseUrl) {
+  const normalized = String(baseUrl || "").replace(/\/+$/, "");
+  if (/\/responses$/.test(normalized)) return normalized;
+  if (/\/chat\/completions$/.test(normalized)) {
+    return normalized.replace(/\/chat\/completions$/, "/responses");
+  }
+  return `${normalized}/responses`;
+}
+
+function buildHttpError(response, text) {
+  const details = parseProviderError(text);
+  const error = new Error(sanitizeErrorMessage(details.message || text || response.statusText));
+  error.name = "HttpError";
+  error.stage = "backend_responses_request";
+  error.status = response.status;
+  error.errorCode = details.code || String(response.status);
+  error.providerErrorCode = details.code || "";
+  error.providerErrorMessage = sanitizeErrorMessage(details.message || response.statusText || "");
+  return error;
+}
+
+function parseProviderError(text) {
+  try {
+    const payload = JSON.parse(text || "{}");
+    const error = payload.error && typeof payload.error === "object" ? payload.error : payload;
+    return {
+      code: error.code || error.errorCode || error.error_code || "",
+      message: error.message || error.errorMessage || error.msg || text || ""
+    };
+  } catch (error) {
+    return { code: "", message: text || "" };
+  }
+}
+
+function extractResponsesText(payload) {
+  if (!payload) return "";
+  if (payload.output_text) return payload.output_text;
+  if (payload.text && typeof payload.text === "string") return payload.text;
+  if (payload.output && Array.isArray(payload.output)) {
+    return payload.output.map((item) => {
+      if (item.type === "message" && Array.isArray(item.content)) {
+        return item.content.map((content) => content.text || content.output_text || "").join("");
+      }
+      if (Array.isArray(item.content)) {
+        return item.content.map((content) => content.text || content.output_text || "").join("");
+      }
+      return item.text || item.output_text || "";
+    }).join("");
+  }
+  if (payload.choices && payload.choices[0] && payload.choices[0].message) {
+    return payload.choices[0].message.content || "";
+  }
+  return "";
+}
+
+function parseAiJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw) {
+    const error = new Error("Parse error: empty AI response text");
+    error.name = "ParseError";
+    error.stage = "parse_response";
+    throw error;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) {
+      const parseError = new Error("Parse error: AI response was not JSON");
+      parseError.name = "ParseError";
+      parseError.stage = "parse_response";
+      throw parseError;
+    }
+    try {
+      return JSON.parse(match[0]);
+    } catch (innerError) {
+      const parseError = new Error("Parse error: failed to parse extracted JSON");
+      parseError.name = "ParseError";
+      parseError.stage = "parse_response";
+      throw parseError;
+    }
+  }
 }
 
 function sanitizeErrorMessage(message) {
@@ -94,7 +240,7 @@ function buildResponsesInput({ query, originalInput, selectedOption }) {
   const searchQuery = `${query} 京东 天猫 淘宝 拼多多 到手价 618 补贴`;
   return [
     "你是一个中文 AI 购物补贴价联网搜索整理助手。",
-    "请使用 web_search 搜索最新公开网页信息；必要时用 web_extractor 抽取搜索结果页面内容。",
+    "请使用 web_search 搜索最新公开网页信息。本轮不要使用 web_extractor。",
     "搜索重点平台：京东、天猫/淘宝、拼多多；线下商超如有参考价值再返回。",
     "不要编造确定价格。搜索结果不确定时使用价格区间，并在 discount 或 suggestion 中说明券、会员、地区、活动变化会影响价格。",
     "不要编造确定商品链接。拿不到具体商品链接时，返回平台搜索页或平台首页搜索 URL。",
